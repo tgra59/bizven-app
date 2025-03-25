@@ -94,7 +94,8 @@ A business venture management app for tracking time, documenting work sessions, 
 - Always use environment variables for Firebase configuration
 - Ensure `.env` files are added to `.gitignore`
 - Follow Firebase security rules for data access control
-- Use Firebase Authentication for secure user management
+- Using Google Authentication for secure user management
+- No need for password storage as we rely exclusively on Google OAuth
 
 ## License
 
