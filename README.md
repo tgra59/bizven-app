@@ -1,50 +1,101 @@
-# Welcome to your Expo app 👋
+# BIZVEN
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A business venture management app for tracking time, documenting work sessions, and monitoring project progress.
 
-## Get started
+## Features
 
-1. Install dependencies
+### Core Functionality
+- Time tracking for business projects with start/stop timer functionality
+- Work session documentation through written notes or voice dictation (using Whisper API)
+- Automatic summarization of session notes using an LLM
+- Project progress tracking with percentage completion updates
+- Categorization of work (marketing, creation, general business tasks)
 
+### App Structure (3 Tabs)
+1. **Timer Tab** - Session timer controls, project selection, work documentation interface
+2. **Project Dashboard** - Overall project progress visualization, breakdown by development steps, monthly schedule view, task completion status
+3. **Performance Dashboard** - Metrics tracking for deliverables, analytics for platform plays/views, goal setting and achievement monitoring, effort vs. results analysis
+
+## Technical Implementation
+- React Native for cross-platform deployment (iOS and Android)
+- Firebase backend for user authentication, data storage, server infrastructure, and analytics
+
+## Getting Started
+
+### Prerequisites
+- Node.js (latest LTS version)
+- npm or yarn
+- Expo CLI (`npm install -g expo-cli`)
+- Firebase account and project
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/tgra59/bizven-app.git
+   cd bizven-app
+   ```
+
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. Start the app
-
-   ```bash
-    npx expo start
+3. Create a `.env` file in the root directory with your Firebase configuration:
+   ```
+   EXPO_PUBLIC_FIREBASE_API_KEY="your-api-key"
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN="your-auth-domain"
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID="your-project-id"
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET="your-storage-bucket"
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="your-sender-id"
+   EXPO_PUBLIC_FIREBASE_APP_ID="your-app-id"
+   EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID="your-measurement-id"
    ```
 
-In the output, you'll find options to open the app in a
+4. Start the development server:
+   ```bash
+   npx expo start
+   ```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Deployment
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+#### Firebase Deployment
 
-## Get a fresh project
+1. Install Firebase CLI:
+   ```bash
+   npm install -g firebase-tools
+   ```
 
-When you're ready, run:
+2. Login to Firebase:
+   ```bash
+   firebase login
+   ```
 
-```bash
-npm run reset-project
-```
+3. Initialize Firebase with your project:
+   ```bash
+   firebase init
+   ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+4. Deploy to Firebase:
+   ```bash
+   firebase deploy
+   ```
 
-## Learn more
+## Contributing
 
-To learn more about developing your project with Expo, look at the following resources:
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Security Considerations
 
-## Join the community
+- Always use environment variables for Firebase configuration
+- Ensure `.env` files are added to `.gitignore`
+- Follow Firebase security rules for data access control
+- Use Firebase Authentication for secure user management
 
-Join our community of developers creating universal apps.
+## License
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+This project is licensed under the MIT License - see the LICENSE file for details
