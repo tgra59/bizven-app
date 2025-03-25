@@ -390,9 +390,9 @@ const ProfileScreen = ({ navigation }) => {
       }
       
       // Create invitation document
-      const invitationRef = await addDoc(collection(db, 'invitations'), {
+      const invitationData = {
         projectId: selectedProject.id,
-        projectName: projectData.name,
+        projectName: selectedProject.name,
         inviterId: user.uid,
         inviterName: user.displayName || 'A user',
         inviteeId: invitedUserId,
@@ -400,7 +400,11 @@ const ProfileScreen = ({ navigation }) => {
         role: inviteRole,
         status: 'pending',
         createdAt: serverTimestamp()
-      });
+      };
+      
+      console.log('INVITE: Creating invitation with data:', JSON.stringify(invitationData));
+      
+      const invitationRef = await addDoc(collection(db, 'invitations'), invitationData);
       
       console.log('INVITE: Created invitation with ID:', invitationRef.id);
       
@@ -414,6 +418,15 @@ const ProfileScreen = ({ navigation }) => {
         }),
         updatedAt: serverTimestamp()
       });
+      
+      // Verify the invitation was created by fetching it back
+      const verifyInvitation = await getDoc(invitationRef);
+      if (verifyInvitation.exists()) {
+        console.log('INVITE: Verified invitation exists:', verifyInvitation.data());
+      } else {
+        console.error('INVITE: Failed to verify invitation creation!');
+        Alert.alert('Warning', 'Invitation may not have been saved correctly.');
+      }
       
       console.log('INVITE: Updated project with invitation record');
       

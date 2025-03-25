@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { Card, Title, Text, Button, Chip, List, Avatar, Dialog, Portal } from 'react-native-paper';
-import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, getDoc, serverTimestamp, onSnapshot, writeBatch, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
-import { acceptProjectInvitation } from '../services/projects';
 
 const PendingInvitations = () => {
   const [invitations, setInvitations] = useState([]);
@@ -13,99 +12,181 @@ const PendingInvitations = () => {
   const [dialogVisible, setDialogVisible] = useState(false);
   const [processingAction, setProcessingAction] = useState(false);
 
-  // Fetch pending invitations for the current user
+  // Fetch pending invitations for the current user using real-time listener
   useEffect(() => {
-    const fetchInvitations = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        setLoading(true);
-        
-        // Query the invitations collection for pending invitations for this user
-        const invitationsQuery = query(
-          collection(db, 'invitations'),
-          where('inviteeId', '==', user.uid),
-          where('status', '==', 'pending')
-        );
-        
-        const querySnapshot = await getDocs(invitationsQuery);
-        
-        // Map the invitations to a more usable format
-        const invitationsList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate() || new Date()
-        }));
-        
-        setInvitations(invitationsList);
-      } catch (err) {
-        console.error('Error fetching invitations:', err);
-        setError('Failed to load invitations. Please try again.');
-      } finally {
-        setLoading(false);
+    console.log("INVITATIONS: Setting up invitation listener");
+    
+    let unsubscribeInvitations = null;
+    
+    const setupInvitationsListener = (user) => {
+      if (!user) {
+        console.log("INVITATIONS: No authenticated user");
+        setInvitations([]);
+        return;
       }
+
+      setLoading(true);
+      console.log(`INVITATIONS: Setting up listener for user ${user.email} (${user.uid})`);
+      
+      // First check if there are invitations by email
+      const emailInvitationsQuery = query(
+        collection(db, 'invitations'),
+        where('inviteeEmail', '==', user.email),
+        where('status', '==', 'pending')
+      );
+      
+      // Set up real-time listener for invitations
+      unsubscribeInvitations = onSnapshot(emailInvitationsQuery, 
+        (snapshot) => {
+          try {
+            console.log(`INVITATIONS: Received invitation update, count: ${snapshot.docs.length}`);
+            
+            // Map the invitations to a more usable format
+            const invitationsList = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate() || new Date()
+            }));
+            
+            console.log("INVITATIONS: Retrieved invitations:", invitationsList.length);
+            
+            // Sort by creation date (newest first)
+            invitationsList.sort((a, b) => b.createdAt - a.createdAt);
+            
+            setInvitations(invitationsList);
+            setLoading(false);
+          } catch (err) {
+            console.error('INVITATIONS: Error processing invitations:', err);
+            setError('Failed to process invitations. Please try again.');
+            setLoading(false);
+          }
+        },
+        (error) => {
+          console.error('INVITATIONS: Error in invitation listener:', error);
+          setError('Failed to load invitations. Please try again.');
+          setLoading(false);
+        }
+      );
     };
     
-    // Set up a real-time listener for auth state changes
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
-      if (user) fetchInvitations();
-    });
-    
-    // Fetch invitations initially and then every 30 seconds
-    fetchInvitations();
-    const refreshInterval = setInterval(fetchInvitations, 30000);
+    // Set up auth state listener
+    const unsubscribeAuth = auth.onAuthStateChanged(setupInvitationsListener);
     
     // Cleanup on component unmount
     return () => {
-      clearInterval(refreshInterval);
+      console.log("INVITATIONS: Cleaning up listeners");
+      if (unsubscribeInvitations) unsubscribeInvitations();
       unsubscribeAuth();
     };
   }, []);
 
-  // Handle accepting an invitation
+  // Handle accepting an invitation with direct Firestore operations
   const handleAcceptInvitation = async () => {
     if (!selectedInvitation) return;
     
     try {
       setProcessingAction(true);
+      console.log(`INVITATIONS: Accepting invitation ${selectedInvitation.id}`);
       
-      // Use the acceptProjectInvitation service
-      await acceptProjectInvitation(selectedInvitation.id);
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+      
+      // Get the invitation details
+      const invitationRef = doc(db, 'invitations', selectedInvitation.id);
+      const invitationSnap = await getDoc(invitationRef);
+      
+      if (!invitationSnap.exists()) {
+        throw new Error('Invitation not found');
+      }
+      
+      const invitation = invitationSnap.data();
+      
+      // Get the project
+      const projectRef = doc(db, 'projects', invitation.projectId);
+      const projectSnap = await getDoc(projectRef);
+      
+      if (!projectSnap.exists()) {
+        throw new Error('Project not found');
+      }
+      
+      // Get the role from the invitation
+      const role = invitation.role || 'Member';
+      
+      // Batch write to ensure atomic updates
+      const batch = writeBatch(db);
+      
+      // Update the project with the new member
+      batch.update(projectRef, {
+        members: arrayUnion(user.uid),
+        [`memberRoles.${user.uid}`]: role,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update the user document
+      const userRef = doc(db, 'users', user.uid);
+      batch.update(userRef, {
+        projects: arrayUnion(invitation.projectId)
+      });
+      
+      // Update the invitation status
+      batch.update(invitationRef, {
+        status: 'accepted',
+        respondedAt: serverTimestamp()
+      });
+      
+      // Commit the batch
+      await batch.commit();
+      
+      console.log(`INVITATIONS: Successfully accepted invitation ${selectedInvitation.id}`);
       
       // Update the local state
       setInvitations(invitations.filter(inv => inv.id !== selectedInvitation.id));
       setDialogVisible(false);
       setSelectedInvitation(null);
+      
+      // Show success message
+      Alert.alert('Success', `You have joined the project "${invitation.projectName}" as a ${role}`);
     } catch (err) {
-      console.error('Error accepting invitation:', err);
+      console.error('INVITATIONS: Error accepting invitation:', err);
       setError('Failed to accept invitation. Please try again.');
+      Alert.alert('Error', err.message || 'Failed to accept invitation. Please try again.');
     } finally {
       setProcessingAction(false);
     }
   };
 
-  // Handle rejecting an invitation
+  // Handle rejecting an invitation with direct Firestore operations
   const handleRejectInvitation = async () => {
     if (!selectedInvitation) return;
     
     try {
       setProcessingAction(true);
+      console.log(`INVITATIONS: Rejecting invitation ${selectedInvitation.id}`);
       
-      // Update the invitation status in Firestore
+      // Get the invitation details
       const invitationRef = doc(db, 'invitations', selectedInvitation.id);
+      
+      // Update the invitation status directly
       await updateDoc(invitationRef, {
         status: 'rejected',
         respondedAt: serverTimestamp()
       });
       
+      console.log(`INVITATIONS: Successfully rejected invitation ${selectedInvitation.id}`);
+      
       // Update the local state
       setInvitations(invitations.filter(inv => inv.id !== selectedInvitation.id));
       setDialogVisible(false);
       setSelectedInvitation(null);
+      
+      // Show success message
+      Alert.alert('Success', 'Invitation rejected');
     } catch (err) {
-      console.error('Error rejecting invitation:', err);
+      console.error('INVITATIONS: Error rejecting invitation:', err);
       setError('Failed to reject invitation. Please try again.');
+      Alert.alert('Error', err.message || 'Failed to reject invitation. Please try again.');
     } finally {
       setProcessingAction(false);
     }
