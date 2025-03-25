@@ -23,6 +23,9 @@ export const getUserProjects = async () => {
     const user = auth.currentUser;
     if (!user) throw new Error('User not authenticated');
     
+    console.log(`PROJECTS: Getting projects for user: ${user.uid}, email: ${user.email}`);
+    
+    // First approach: query projects where user is a member
     const projectsQuery = query(
       collection(db, 'projects'),
       where('members', 'array-contains', user.uid),
@@ -30,11 +33,117 @@ export const getUserProjects = async () => {
     );
     
     const querySnapshot = await getDocs(projectsQuery);
+    console.log(`PROJECTS: Found ${querySnapshot.docs.length} projects by membership`);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const projectsById = {};
+    
+    // Add projects to the map
+    querySnapshot.docs.forEach(doc => {
+      projectsById[doc.id] = {
+        id: doc.id,
+        ...doc.data()
+      };
+    });
+    
+    // Second approach: query invitations where user email matched
+    console.log(`PROJECTS: Checking for invitations with user email: ${user.email}`);
+    const acceptedInvitationsQuery = query(
+      collection(db, 'invitations'),
+      where('inviteeEmail', '==', user.email),
+      where('status', '==', 'accepted')
+    );
+    
+    const acceptedInvitationsSnapshot = await getDocs(acceptedInvitationsQuery);
+    console.log(`PROJECTS: Found ${acceptedInvitationsSnapshot.docs.length} accepted invitations`);
+    
+    // For each accepted invitation, fetch the project
+    for (const inviteDoc of acceptedInvitationsSnapshot.docs) {
+      const invite = inviteDoc.data();
+      const projectId = invite.projectId;
+      
+      // Skip if we already have this project
+      if (projectsById[projectId]) continue;
+      
+      try {
+        console.log(`PROJECTS: Fetching project ${projectId} from invitation`);
+        const projectDoc = await getDoc(doc(db, 'projects', projectId));
+        
+        if (projectDoc.exists()) {
+          const projectData = projectDoc.data();
+          
+          // Add project to the map
+          projectsById[projectId] = {
+            id: projectId,
+            ...projectData
+          };
+          
+          // Check if user is in the members array
+          if (!projectData.members || !projectData.members.includes(user.uid)) {
+            console.log(`PROJECTS: Adding user to project members for ${projectId}`);
+            
+            // Update the project to include this user
+            await updateDoc(doc(db, 'projects', projectId), {
+              members: arrayUnion(user.uid),
+              [`memberRoles.${user.uid}`]: invite.role || 'Member',
+              updatedAt: serverTimestamp()
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`PROJECTS: Error fetching project ${projectId} from invitation:`, err);
+      }
+    }
+    
+    // Third approach: check user document for projects array
+    const userRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists() && userDoc.data().projects && Array.isArray(userDoc.data().projects)) {
+      const userProjects = userDoc.data().projects;
+      console.log(`PROJECTS: Found ${userProjects.length} projects in user document`);
+      
+      // Load any projects that weren't found by the first query
+      for (const projectId of userProjects) {
+        if (!projectsById[projectId]) {
+          try {
+            console.log(`PROJECTS: Fetching project ${projectId} from user document`);
+            const projectDoc = await getDoc(doc(db, 'projects', projectId));
+            
+            if (projectDoc.exists()) {
+              projectsById[projectId] = {
+                id: projectId,
+                ...projectDoc.data()
+              };
+              
+              // Update the project to include this user if they weren't in members
+              if (!projectDoc.data().members || !projectDoc.data().members.includes(user.uid)) {
+                console.log(`PROJECTS: Adding user to project members for ${projectId}`);
+                await updateDoc(doc(db, 'projects', projectId), {
+                  members: arrayUnion(user.uid)
+                });
+              }
+            }
+          } catch (err) {
+            console.error(`PROJECTS: Error fetching project ${projectId} from user document:`, err);
+          }
+        }
+      }
+    } else {
+      // Create projects array if it doesn't exist
+      console.log('PROJECTS: Creating projects array in user document');
+      await updateDoc(userRef, {
+        projects: [],
+        updatedAt: serverTimestamp()
+      }).catch(err => {
+        console.log('PROJECTS: Error creating projects array:', err);
+      });
+    }
+    
+    // Convert the map to an array
+    const projects = Object.values(projectsById);
+    console.log(`PROJECTS: Returning ${projects.length} total projects`);
+    
+    return projects;
   } catch (error) {
     console.error("Error getting user projects:", error);
     throw error;
