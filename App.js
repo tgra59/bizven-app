@@ -1,120 +1,156 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { View, Text } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Provider as PaperProvider, DefaultTheme } from 'react-native-paper';
+import { auth } from './src/config/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+// Import screens
+import LoginScreen from './src/screens/LoginScreen';
+import SignUpScreen from './src/screens/SignUpScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+
+// Import other components we'll need later
+import TimerScreen from './src/screens/TimerScreen';
+import ProjectsScreen from './src/screens/ProjectsScreen';
+import AnalyticsScreen from './src/screens/AnalyticsScreen';
+
+// Create navigation stacks and tabs
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+// App theme
+const theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: '#007BFF',
+    accent: '#FF4500',
+  },
+};
+
+// Main tab navigator for authenticated users
+const MainTabNavigator = () => {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          if (route.name === 'Timer') {
+            iconName = 'timer';
+          } else if (route.name === 'Projects') {
+            iconName = 'view-dashboard';
+          } else if (route.name === 'Analytics') {
+            iconName = 'chart-bar';
+          } else if (route.name === 'Profile') {
+            iconName = 'account';
+          }
+
+          return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: 'gray',
+        headerShown: false,
+      })}
+    >
+      <Tab.Screen
+        name="Timer"
+        component={TimerScreen || PlaceholderScreen('Timer')}
+        options={{ title: 'Timer' }}
+      />
+      <Tab.Screen
+        name="Projects"
+        component={ProjectsScreen || PlaceholderScreen('Projects')}
+        options={{ title: 'Projects' }}
+      />
+      <Tab.Screen
+        name="Analytics"
+        component={AnalyticsScreen || PlaceholderScreen('Analytics')}
+        options={{ title: 'Analytics' }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{ title: 'Profile' }}
+      />
+    </Tab.Navigator>
+  );
+};
+
+// Placeholder component for screens we haven't built yet
+const PlaceholderScreen = (screenName) => {
+  return () => (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>{screenName} screen coming soon!</Text>
+    </View>
+  );
+};
 
 export default function App() {
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState(null);
+
+  // Handle user state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      if (initializing) setInitializing(false);
+    });
+
+    // Clean up the subscriber on unmount
+    return unsubscribe;
+  }, [initializing]);
+
+  // Create placeholder screens for screens we haven't implemented yet
+  if (!TimerScreen) {
+    TimerScreen = PlaceholderScreen('Timer');
+  }
+  if (!ProjectsScreen) {
+    ProjectsScreen = PlaceholderScreen('Projects');
+  }
+  if (!AnalyticsScreen) {
+    AnalyticsScreen = PlaceholderScreen('Analytics');
+  }
+
+  // Show a loading screen while checking authentication
+  if (initializing) {
+    return (
+      <SafeAreaProvider>
+        <PaperProvider theme={theme}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Text>Loading...</Text>
+          </View>
+        </PaperProvider>
+      </SafeAreaProvider>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>BIZVEN</Text>
-        <Text style={styles.subtitle}>Business Venture Tracking App</Text>
-        
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Welcome!</Text>
-          <Text style={styles.cardText}>
-            Track your time, document your work sessions, and monitor your project progress with BIZVEN.
-          </Text>
-          
-          <TouchableOpacity style={styles.button}>
-            <Text style={styles.buttonText}>Get Started</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <View style={styles.featuresContainer}>
-          <Text style={styles.featuresTitle}>Key Features:</Text>
-          
-          <View style={styles.featureItem}>
-            <Text style={styles.featureText}>• Time tracking with start/stop functionality</Text>
-          </View>
-          
-          <View style={styles.featureItem}>
-            <Text style={styles.featureText}>• Work session documentation</Text>
-          </View>
-          
-          <View style={styles.featureItem}>
-            <Text style={styles.featureText}>• Project progress tracking</Text>
-          </View>
-          
-          <View style={styles.featureItem}>
-            <Text style={styles.featureText}>• Performance analytics</Text>
-          </View>
-        </View>
-      </View>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <PaperProvider theme={theme}>
+        <NavigationContainer>
+          <StatusBar style="auto" />
+          {user ? (
+            // User is signed in, show the main tab navigator
+            <MainTabNavigator />
+          ) : (
+            // No user is signed in, show the auth navigator
+            <Stack.Navigator
+              initialRouteName="Login"
+              screenOptions={{ headerShown: false }}
+            >
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="SignUp" component={SignUpScreen} />
+            </Stack.Navigator>
+          )}
+        </NavigationContainer>
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#007BFF',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#555',
-    marginBottom: 32,
-  },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 24,
-    width: '100%',
-    maxWidth: 500,
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    marginBottom: 24,
-  },
-  cardTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  cardText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 24,
-    color: '#444',
-  },
-  button: {
-    backgroundColor: '#007BFF',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 24,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  featuresContainer: {
-    width: '100%',
-    maxWidth: 500,
-  },
-  featuresTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  featureItem: {
-    marginBottom: 12,
-  },
-  featureText: {
-    fontSize: 16,
-    color: '#444',
-  },
-});

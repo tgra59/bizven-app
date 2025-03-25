@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
-import { Button, Title, Text, Snackbar } from 'react-native-paper';
+import { Button, Title, Text, Snackbar, TextInput, Divider } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '../config/firebase';
 import { 
@@ -11,20 +11,25 @@ import {
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const LoginScreen = () => {
+const LoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
 
-  // For demo purposes, let's create a simulated login
-  const handleDemoLogin = async () => {
+  // Form state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
+  // Handle email/password login
+  const handleEmailLogin = async () => {
     try {
       setLoading(true);
       
-      // For development/testing, we'll use a demo login
-      // In production, this would be replaced with actual Google Auth
-      const email = "demo@example.com";
-      const password = "password123";
+      if (!email || !password) {
+        setError('Please enter both email and password');
+        setSnackbarVisible(true);
+        return;
+      }
       
       try {
         // Try to sign in with email/password first (if the user exists)
@@ -82,18 +87,63 @@ const LoginScreen = () => {
             <Title style={styles.formTitle}>Welcome</Title>
             <Text style={styles.subtitle}>Sign in to access your projects and track your time</Text>
             
+            {/* Email/Password Login Form */}
+            <TextInput
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              style={styles.input}
+              mode="outlined"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            
+            <TextInput
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              style={styles.input}
+              mode="outlined"
+              secureTextEntry
+            />
+            
             <Button
               mode="contained"
+              onPress={handleEmailLogin}
+              style={styles.loginButton}
+              loading={loading}
+              disabled={loading}
+            >
+              Sign In
+            </Button>
+            
+            <Divider style={styles.divider} />
+            
+            <Text style={styles.orText}>Or continue with</Text>
+            
+            <Button
+              mode="outlined"
               onPress={handleDemoLogin}
               style={styles.googleButton}
               loading={loading}
               disabled={loading}
               icon={({ size, color }) => (
-                <MaterialCommunityIcons name="google" size={size} color={color} />
+                <MaterialCommunityIcons name="google" size={size} color="#DB4437" />
               )}
             >
-              Demo Login (Simulated Google Auth)
+              Google
             </Button>
+            
+            <View style={styles.signupContainer}>
+              <Text style={styles.signupText}>Don't have an account?</Text>
+              <Button
+                mode="text"
+                onPress={() => navigation.navigate('SignUp')}
+                style={styles.signupButton}
+              >
+                Sign Up
+              </Button>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -161,11 +211,42 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     color: '#666',
   },
+  input: {
+    marginBottom: 12,
+    backgroundColor: 'white',
+  },
+  loginButton: {
+    marginTop: 8,
+    paddingVertical: 6,
+    width: '100%',
+    borderRadius: 24,
+  },
+  divider: {
+    marginVertical: 20,
+  },
+  orText: {
+    textAlign: 'center',
+    color: '#888',
+    marginBottom: 12,
+  },
   googleButton: {
     marginTop: 8,
     paddingVertical: 6,
     width: '100%',
     borderRadius: 24,
+    borderColor: '#DB4437',
+  },
+  signupContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  signupText: {
+    color: '#666',
+  },
+  signupButton: {
+    marginLeft: 4,
   },
 });
 
