@@ -264,7 +264,7 @@ const ProfileScreen = ({ navigation }) => {
               
               <Avatar.Image
                 size={80}
-                source={user?.photoURL ? { uri: user.photoURL } : require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf')}
+                source={user?.photoURL ? { uri: user.photoURL } : { uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.displayName || 'User')}&background=random` }}
               />
             </View>
             

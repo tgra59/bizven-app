@@ -25,7 +25,7 @@ import { auth, db } from '../config/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// Removed Firebase Storage imports as we're not using Storage
 
 const SignUpScreen = ({ navigation, route }) => {
   // Get user data from route params if available (from social login)
@@ -96,28 +96,19 @@ const SignUpScreen = ({ navigation, route }) => {
     }
   };
   
-  // Upload profile image to Firebase Storage
+  // Store profile image URL in user profile (not uploading to Firebase Storage)
   const uploadProfileImage = async (uid) => {
     if (!profileImage) return null;
     
     try {
-      const storage = getStorage();
-      const fileExtension = profileImage.split('.').pop();
-      const fileName = `profile_${uid}.${fileExtension}`;
-      const storageRef = ref(storage, `profile_images/${fileName}`);
+      // For now, we'll just return the local URI
+      // In a production app, you might want to implement a different storage solution
+      console.log('Profile image would be uploaded for user:', uid);
       
-      // Fetch the image and convert to blob
-      const response = await fetch(profileImage);
-      const blob = await response.blob();
-      
-      // Upload blob
-      await uploadBytes(storageRef, blob);
-      
-      // Get download URL
-      const downloadURL = await getDownloadURL(storageRef);
-      return downloadURL;
+      // Return a placeholder image URL since we're not using Firebase Storage
+      return 'https://ui-avatars.com/api/?name=' + encodeURIComponent(displayName) + '&background=random';
     } catch (error) {
-      console.error('Error uploading image:', error);
+      console.error('Error handling profile image:', error);
       return null;
     }
   };
