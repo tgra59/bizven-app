@@ -9,6 +9,7 @@ import {
   Modal,
   TextInput as RNTextInput
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Text,
   Title,
@@ -107,12 +108,32 @@ const ProfileScreen = ({ navigation }) => {
         }
         
         // For persistence across refreshes, also try to recover last selected project
-        if (projectsList.length > 0 && localStorage) {
-          const lastProjectId = localStorage.getItem('selectedProjectId');
-          if (lastProjectId) {
-            const foundProject = projectsList.find(p => p.id === lastProjectId);
-            if (foundProject) {
-              setSelectedProject(foundProject);
+        if (projectsList.length > 0) {
+          try {
+            const recoverSelectedProject = async () => {
+              const lastProjectId = await AsyncStorage.getItem('selectedProjectId');
+              console.log('Recovered project ID from AsyncStorage:', lastProjectId);
+              
+              if (lastProjectId) {
+                const foundProject = projectsList.find(p => p.id === lastProjectId);
+                if (foundProject) {
+                  console.log('Found matching project in list, setting as selected:', foundProject.name);
+                  setSelectedProject(foundProject);
+                } else {
+                  console.log('Project ID not found in list, defaulting to first project');
+                  setSelectedProject(projectsList[0]);
+                }
+              } else {
+                console.log('No saved project ID, defaulting to first project');
+                setSelectedProject(projectsList[0]);
+              }
+            };
+            recoverSelectedProject();
+          } catch (error) {
+            console.error('Error recovering selected project ID:', error);
+            // Set first project as fallback
+            if (projectsList.length > 0) {
+              setSelectedProject(projectsList[0]);
             }
           }
         }
@@ -142,11 +163,11 @@ const ProfileScreen = ({ navigation }) => {
   // Save selected project ID to device storage when it changes
   useEffect(() => {
     if (selectedProject) {
-      // Use AsyncStorage instead of localStorage (which isn't available in React Native)
+      // Save the selected project ID to AsyncStorage
       try {
         const saveSelectedProject = async () => {
-          const { AsyncStorage } = require('@react-native-async-storage/async-storage');
           await AsyncStorage.setItem('selectedProjectId', selectedProject.id);
+          console.log('Saved selected project ID to AsyncStorage:', selectedProject.id);
         };
         saveSelectedProject();
       } catch (error) {
