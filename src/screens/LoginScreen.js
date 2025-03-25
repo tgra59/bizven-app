@@ -1,31 +1,27 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
-import { Button, Title, Text, Snackbar, TextInput, Divider } from 'react-native-paper';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { Button, Title, Text, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '../config/firebase';
 import { 
   GoogleAuthProvider, 
-  signInWithCredential,
-  signInWithEmailAndPassword 
+  signInWithCredential
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const LoginScreen = ({ navigation }) => {
+const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
-
-  // Form state
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   
-  // Handle demo login with Google
-  const handleDemoLogin = async () => {
+  // Handle Google login/signup
+  const handleGoogleAuth = async () => {
     try {
       setLoading(true);
       
       // For demo purposes, create a fake Google user with a profile picture
+      // In a production app, you would use the real Google Sign-In SDK
       const userCredential = {
         user: {
           uid: "google_demo_user_123",
@@ -40,17 +36,19 @@ const LoginScreen = ({ navigation }) => {
       const userDocRef = doc(db, 'users', userCredential.user.uid);
       const userDoc = await getDoc(userDocRef);
       
-      // If user doesn't exist, create a new document
+      // If user doesn't exist, create a new document (sign-up flow)
       if (!userDoc.exists()) {
+        console.log('Creating new user from Google account');
         await setDoc(userDocRef, {
           uid: userCredential.user.uid,
           email: userCredential.user.email,
           displayName: userCredential.user.displayName || 'User',
-          photoURL: userCredential.user.photoURL, // This will store the Google profile picture URL
+          photoURL: userCredential.user.photoURL, // Store Google profile picture URL
           createdAt: new Date(),
           projects: []
         });
       } else {
+        console.log('User exists, signing in');
         // If user exists but doesn't have a profile picture, update with Google profile picture
         if (!userDoc.data().photoURL && userCredential.user.photoURL) {
           await updateDoc(userDocRef, {
@@ -61,59 +59,8 @@ const LoginScreen = ({ navigation }) => {
       
       // Navigation will be handled by the onAuthStateChanged listener in App.js
     } catch (error) {
-      console.error('Google login error:', error);
-      setError('Failed to sign in with Google. Please try again.');
-      setSnackbarVisible(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Handle email/password login
-  const handleEmailLogin = async () => {
-    try {
-      setLoading(true);
-      
-      if (!email || !password) {
-        setError('Please enter both email and password');
-        setSnackbarVisible(true);
-        return;
-      }
-      
-      try {
-        // Try to sign in with email/password first (if the user exists)
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch (e) {
-        // If sign in fails, create a fake user in Firebase
-        const userCredential = {
-          user: {
-            uid: "demo_user_123",
-            email: email,
-            displayName: "Demo User"
-          }
-        };
-        
-        // Check if user exists in Firestore
-        const userDocRef = doc(db, 'users', userCredential.user.uid);
-        const userDoc = await getDoc(userDocRef);
-        
-        // If user doesn't exist, create a new document
-        if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
-            uid: userCredential.user.uid,
-            email: userCredential.user.email,
-            displayName: userCredential.user.displayName || 'User',
-            photoURL: null,
-            createdAt: new Date(),
-            projects: []
-          });
-        }
-      }
-      
-      // Navigation will be handled by the onAuthStateChanged listener in App.js
-    } catch (error) {
-      console.error('Login error:', error);
-      setError('Failed to sign in. Please try again.');
+      console.error('Google authentication error:', error);
+      setError('Failed to authenticate with Google. Please try again.');
       setSnackbarVisible(true);
     } finally {
       setLoading(false);
@@ -134,65 +81,24 @@ const LoginScreen = ({ navigation }) => {
 
           <View style={styles.formContainer}>
             <Title style={styles.formTitle}>Welcome</Title>
-            <Text style={styles.subtitle}>Sign in to access your projects and track your time</Text>
-            
-            {/* Email/Password Login Form */}
-            <TextInput
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              style={styles.input}
-              mode="outlined"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            
-            <TextInput
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              style={styles.input}
-              mode="outlined"
-              secureTextEntry
-            />
+            <Text style={styles.subtitle}>Sign in with your Google account to access your projects</Text>
             
             <Button
               mode="contained"
-              onPress={handleEmailLogin}
-              style={styles.loginButton}
-              loading={loading}
-              disabled={loading}
-            >
-              Sign In
-            </Button>
-            
-            <Divider style={styles.divider} />
-            
-            <Text style={styles.orText}>Or continue with</Text>
-            
-            <Button
-              mode="outlined"
-              onPress={handleDemoLogin}
+              onPress={handleGoogleAuth}
               style={styles.googleButton}
               loading={loading}
               disabled={loading}
               icon={({ size, color }) => (
-                <MaterialCommunityIcons name="google" size={size} color="#DB4437" />
+                <MaterialCommunityIcons name="google" size={24} color="white" />
               )}
             >
-              Google
+              Continue with Google
             </Button>
             
-            <View style={styles.signupContainer}>
-              <Text style={styles.signupText}>Don't have an account?</Text>
-              <Button
-                mode="text"
-                onPress={() => navigation.navigate('SignUp')}
-                style={styles.signupButton}
-              >
-                Sign Up
-              </Button>
-            </View>
+            <Text style={styles.infoText}>
+              We'll automatically create an account if you don't have one yet
+            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -230,18 +136,18 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   appTitle: {
-    fontSize: 32,
+    fontSize: 38,
     fontWeight: 'bold',
     color: '#007BFF',
   },
   tagline: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#555',
     marginTop: 8,
   },
   formContainer: {
     backgroundColor: 'white',
-    padding: 20,
+    padding: 25,
     borderRadius: 12,
     elevation: 4,
     shadowColor: '#000',
@@ -251,51 +157,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   formTitle: {
-    fontSize: 24,
-    marginBottom: 10,
+    fontSize: 26,
+    marginBottom: 16,
     textAlign: 'center',
   },
   subtitle: {
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 30,
     color: '#666',
-  },
-  input: {
-    marginBottom: 12,
-    backgroundColor: 'white',
-  },
-  loginButton: {
-    marginTop: 8,
-    paddingVertical: 6,
-    width: '100%',
-    borderRadius: 24,
-  },
-  divider: {
-    marginVertical: 20,
-  },
-  orText: {
-    textAlign: 'center',
-    color: '#888',
-    marginBottom: 12,
+    fontSize: 16,
   },
   googleButton: {
-    marginTop: 8,
-    paddingVertical: 6,
+    marginTop: 15,
+    paddingVertical: 8,
     width: '100%',
     borderRadius: 24,
-    borderColor: '#DB4437',
+    backgroundColor: '#DB4437',
+    marginBottom: 20,
   },
-  signupContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-  },
-  signupText: {
-    color: '#666',
-  },
-  signupButton: {
-    marginLeft: 4,
+  infoText: {
+    textAlign: 'center',
+    color: '#777',
+    marginTop: 20,
+    fontSize: 14,
   },
 });
 
