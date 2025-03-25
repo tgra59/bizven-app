@@ -290,7 +290,7 @@ const ProfileScreen = ({ navigation }) => {
     }
   };
   
-  // Handle inviting a team member using the projects service
+  // Handle inviting a team member using direct Firestore operations
   const handleInviteTeamMember = async () => {
     if (!inviteEmail) {
       Alert.alert('Error', 'Please enter an email');
@@ -317,11 +317,105 @@ const ProfileScreen = ({ navigation }) => {
     
     try {
       setLoading(true);
-      console.log(`Inviting ${inviteEmail} with role ${inviteRole} to project ${selectedProject.id}`);
+      console.log(`INVITE: Starting invitation for ${inviteEmail} with role ${inviteRole} to project ${selectedProject.id}`);
       
-      // Use the inviteUserToProject service with the selected role
-      const result = await inviteUserToProject(selectedProject.id, inviteEmail, inviteRole);
-      console.log('Invitation success:', result);
+      // Get current project data
+      const projectRef = doc(db, 'projects', selectedProject.id);
+      const projectSnap = await getDoc(projectRef);
+      
+      if (!projectSnap.exists()) {
+        throw new Error('Project not found');
+      }
+      
+      const projectData = projectSnap.data();
+      
+      // Check if current user has permission to invite
+      const user = auth.currentUser;
+      const isOwner = projectData.ownerId === user.uid;
+      const isAdmin = projectData.memberRoles?.[user.uid] === 'admin';
+      
+      if (!isOwner && !isAdmin) {
+        throw new Error('You do not have permission to invite users');
+      }
+      
+      // Look for user by email
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('email', '==', inviteEmail)
+      );
+      
+      const userSnapshot = await getDocs(usersQuery);
+      
+      let invitedUserId;
+      
+      if (userSnapshot.empty) {
+        // No existing user with this email, create a placeholder
+        console.log('INVITE: User not found, creating placeholder for:', inviteEmail);
+        
+        // Generate a unique ID for the pending user
+        invitedUserId = `pending_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Create a document in pendingUsers collection
+        const pendingUserRef = doc(db, 'pendingUsers', invitedUserId);
+        await setDoc(pendingUserRef, {
+          email: inviteEmail,
+          createdAt: serverTimestamp(),
+          invitedBy: user.uid
+        });
+        
+        console.log('INVITE: Created pending user document with ID:', invitedUserId);
+      } else {
+        // Found existing user
+        const invitedUser = userSnapshot.docs[0];
+        invitedUserId = invitedUser.id;
+        
+        // Check if user is already a member
+        if (projectData.members && projectData.members.includes(invitedUserId)) {
+          throw new Error('User is already a member of this project');
+        }
+      }
+      
+      // Check for existing pending invitations
+      const existingInvitations = query(
+        collection(db, 'invitations'),
+        where('projectId', '==', selectedProject.id),
+        where('inviteeEmail', '==', inviteEmail),
+        where('status', '==', 'pending')
+      );
+      
+      const existingInviteSnapshot = await getDocs(existingInvitations);
+      
+      if (!existingInviteSnapshot.empty) {
+        throw new Error('This user already has a pending invitation to this project');
+      }
+      
+      // Create invitation document
+      const invitationRef = await addDoc(collection(db, 'invitations'), {
+        projectId: selectedProject.id,
+        projectName: projectData.name,
+        inviterId: user.uid,
+        inviterName: user.displayName || 'A user',
+        inviteeId: invitedUserId,
+        inviteeEmail: inviteEmail,
+        role: inviteRole,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      
+      console.log('INVITE: Created invitation with ID:', invitationRef.id);
+      
+      // Update project with invitation record
+      await updateDoc(projectRef, {
+        pendingInvitations: arrayUnion({
+          invitationId: invitationRef.id,
+          email: inviteEmail,
+          role: inviteRole,
+          createdAt: new Date() // Use client-side date for immediate display
+        }),
+        updatedAt: serverTimestamp()
+      });
+      
+      console.log('INVITE: Updated project with invitation record');
       
       // Add to local state for immediate UI update
       const newTeamMember = {
@@ -342,7 +436,7 @@ const ProfileScreen = ({ navigation }) => {
       
       Alert.alert('Success', `Invitation sent to ${inviteEmail} with role: ${inviteRole}`);
     } catch (error) {
-      console.error('Error inviting team member:', error);
+      console.error('INVITE: Error inviting team member:', error);
       Alert.alert('Error', error.message || 'Failed to send invitation. Please try again.');
       // Don't close the modal if there's an error, so user can try again
     } finally {
