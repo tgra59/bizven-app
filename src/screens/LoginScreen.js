@@ -8,7 +8,7 @@ import {
   signInWithCredential,
   signInWithEmailAndPassword 
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const LoginScreen = ({ navigation }) => {
@@ -25,13 +25,14 @@ const LoginScreen = ({ navigation }) => {
     try {
       setLoading(true);
       
-      // For demo purposes, create a fake Google user
+      // For demo purposes, create a fake Google user with a profile picture
       const userCredential = {
         user: {
           uid: "google_demo_user_123",
           email: "demo@gmail.com",
           displayName: "Google Demo User",
-          photoURL: null
+          // Use Google's profile picture from the authentication result
+          photoURL: "https://lh3.googleusercontent.com/a/default-user"
         }
       };
       
@@ -45,10 +46,17 @@ const LoginScreen = ({ navigation }) => {
           uid: userCredential.user.uid,
           email: userCredential.user.email,
           displayName: userCredential.user.displayName || 'User',
-          photoURL: userCredential.user.photoURL,
+          photoURL: userCredential.user.photoURL, // This will store the Google profile picture URL
           createdAt: new Date(),
           projects: []
         });
+      } else {
+        // If user exists but doesn't have a profile picture, update with Google profile picture
+        if (!userDoc.data().photoURL && userCredential.user.photoURL) {
+          await updateDoc(userDocRef, {
+            photoURL: userCredential.user.photoURL
+          });
+        }
       }
       
       // Navigation will be handled by the onAuthStateChanged listener in App.js
