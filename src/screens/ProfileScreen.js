@@ -85,136 +85,124 @@ const ProfileScreen = ({ navigation }) => {
     fetchUserData();
   }, []);
   
-  // Fetch projects using direct Firestore query with real-time updates
+  // Simple direct Firestore query for projects - called on component mount and user state changes
   useEffect(() => {
-    console.log('Setting up projects listener');
-    
-    // Check if user is authenticated first
-    if (!auth.currentUser) {
-      console.log('User not authenticated yet, waiting...');
-      return;
-    }
-    
-    const user = auth.currentUser;
-    console.log('Fetching projects for user:', user.uid);
-    
-    // Set up a real-time listener to the projects collection
-    const projectsQuery = query(
-      collection(db, 'projects'),
-      where('members', 'array-contains', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-    
-    // Subscribe to real-time updates from Firestore
-    const unsubscribeProjects = onSnapshot(projectsQuery, (snapshot) => {
+    // Define function to fetch projects directly
+    const fetchProjectsDirectly = async () => {
+      console.log('DIRECT FETCH: Starting direct project fetch');
+      
+      // Ensure user is authenticated
+      if (!auth.currentUser) {
+        console.error('DIRECT FETCH: No authenticated user');
+        return;
+      }
+      
       try {
-        console.log('Project data updated in Firestore. Documents count:', snapshot.docs.length);
+        console.log(`DIRECT FETCH: Getting projects for user ${auth.currentUser.uid}`);
         
-        // Transform snapshot data to project objects
-        const projectsList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate() || new Date()
-        }));
+        // Create direct query against Firestore
+        const projectsCollection = collection(db, 'projects');
+        const projectsFilter = where('members', 'array-contains', auth.currentUser.uid);
+        const projectsOrder = orderBy('createdAt', 'desc');
+        const projectsQuery = query(projectsCollection, projectsFilter, projectsOrder);
         
-        console.log('Projects fetched successfully:', projectsList.length);
+        // Execute query
+        console.log('DIRECT FETCH: Executing Firestore query');
+        const querySnapshot = await getDocs(projectsQuery);
+        console.log(`DIRECT FETCH: Found ${querySnapshot.docs.length} projects`);
         
-        // Update projects state
-        setProjects(projectsList);
+        // Process results
+        if (querySnapshot.empty) {
+          console.log('DIRECT FETCH: No projects found for user');
+          setProjects([]);
+          setSelectedProject(null);
+          return;
+        }
         
-        // Get the previously selected project ID from Firestore user preferences
-        const getUserPreferences = async () => {
-          try {
-            // Get the user document to check for preferred project
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            let preferredProjectId = null;
-            
-            if (userDoc.exists() && userDoc.data().dashboardProjectId) {
-              preferredProjectId = userDoc.data().dashboardProjectId;
-              console.log('Found preferred project ID in user document:', preferredProjectId);
-            }
-            
-            // If we have projects but no selected project, set one
-            if (projectsList.length > 0) {
-              if (preferredProjectId) {
-                // Try to find the preferred project
-                const foundProject = projectsList.find(p => p.id === preferredProjectId);
-                if (foundProject) {
-                  console.log('Setting preferred project:', foundProject.name);
-                  setSelectedProject(foundProject);
-                } else {
-                  // If preferred project not found, use the first one
-                  console.log('Preferred project not found, using first project');
-                  setSelectedProject(projectsList[0]);
-                }
-              } else if (!selectedProject) {
-                // No preference and no selection, use the first project
-                console.log('No project preference, using first project');
-                setSelectedProject(projectsList[0]);
-              } else {
-                // We have a selection but it might be stale, update it from the fresh data
-                const currentProject = projectsList.find(p => p.id === selectedProject.id);
-                if (currentProject) {
-                  console.log('Updating current selection with fresh data');
-                  setSelectedProject(currentProject);
-                } else {
-                  console.log('Current selection not found in results, using first project');
-                  setSelectedProject(projectsList[0]);
-                }
-              }
+        // Map document data to projects array
+        const fetchedProjects = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate() || new Date()
+          };
+        });
+        
+        console.log('DIRECT FETCH: Mapped project data:', fetchedProjects.map(p => p.name));
+        
+        // Update state with fetched projects
+        setProjects(fetchedProjects);
+        
+        // Set selected project if needed
+        if (fetchedProjects.length > 0) {
+          // If no project is currently selected, select the first one
+          if (!selectedProject) {
+            console.log('DIRECT FETCH: No project selected, selecting first one:', fetchedProjects[0].name);
+            setSelectedProject(fetchedProjects[0]);
+          } else {
+            // If project is selected, ensure it exists in the fetched list
+            const currentProject = fetchedProjects.find(p => p.id === selectedProject.id);
+            if (currentProject) {
+              console.log('DIRECT FETCH: Keeping current selection:', currentProject.name);
+              setSelectedProject(currentProject); // Update with fresh data
             } else {
-              console.log('No projects available');
-              setSelectedProject(null);
-            }
-          } catch (error) {
-            console.error('Error retrieving user preferences:', error);
-            // Fallback to first project if there's an error
-            if (projectsList.length > 0) {
-              setSelectedProject(projectsList[0]);
+              console.log('DIRECT FETCH: Current selection not found, selecting first project');
+              setSelectedProject(fetchedProjects[0]);
             }
           }
-        };
-        
-        getUserPreferences();
+        }
       } catch (error) {
-        console.error('Error processing projects snapshot:', error);
+        console.error('DIRECT FETCH: Error fetching projects:', error);
+        Alert.alert('Error', 'Failed to load projects. Please try again.');
       }
-    }, (error) => {
-      console.error('Error in projects listener:', error);
-    });
+    };
     
-    // Set up an auth state listener
+    // Run the fetch function immediately
+    fetchProjectsDirectly();
+    
+    // Set up interval to refresh projects
+    const refreshInterval = setInterval(fetchProjectsDirectly, 5000); // Check every 5 seconds
+    
+    // Set up auth state change listener
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
-      console.log('Auth state changed, user:', user ? user.uid : 'none');
+      console.log('Auth state changed:', user ? 'User logged in' : 'No user');
+      if (user) fetchProjectsDirectly();
     });
     
-    // Clean up listeners on component unmount
+    // Clean up on unmount
     return () => {
-      console.log('Cleaning up projects listeners');
-      unsubscribeProjects();
+      clearInterval(refreshInterval);
       unsubscribeAuth();
     };
   }, []);
   
-  // Save selected project ID to user preferences in Firestore
+  // Simple save of selected project ID
   useEffect(() => {
     if (selectedProject && auth.currentUser) {
-      console.log('Saving selected project to user preferences:', selectedProject.id);
+      console.log('Project selected:', selectedProject.name, selectedProject.id);
       
-      const saveProjectPreference = async () => {
-        try {
-          const userRef = doc(db, 'users', auth.currentUser.uid);
-          await updateDoc(userRef, {
-            dashboardProjectId: selectedProject.id,
-            updatedAt: serverTimestamp()
-          });
-          console.log('Successfully saved project preference to Firestore');
-        } catch (error) {
-          console.error('Error saving project preference:', error);
-        }
-      };
+      // Save to local storage as backup
+      try {
+        AsyncStorage.setItem('selectedProjectId', selectedProject.id);
+      } catch (e) {
+        console.error('Error saving to AsyncStorage:', e);
+      }
       
-      saveProjectPreference();
+      // Save to Firestore
+      try {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        updateDoc(userRef, {
+          dashboardProjectId: selectedProject.id,
+          lastActive: serverTimestamp()
+        }).then(() => {
+          console.log('Saved project selection to Firestore');
+        }).catch(err => {
+          console.error('Error updating user doc:', err);
+        });
+      } catch (error) {
+        console.error('Error in project selection save:', error);
+      }
     }
   }, [selectedProject]);
   
