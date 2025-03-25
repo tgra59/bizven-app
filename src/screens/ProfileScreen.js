@@ -34,6 +34,7 @@ import {
   inviteUserToProject,
   getProjectMembersActivity 
 } from '../services/projects';
+import PendingInvitations from '../components/PendingInvitations';
 
 const ProfileScreen = ({ navigation }) => {
   // User state
@@ -87,19 +88,72 @@ const ProfileScreen = ({ navigation }) => {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const projectsList = await getUserProjects();
+        // Check if user is authenticated first
+        if (!auth.currentUser) {
+          console.log('User not authenticated yet, waiting...');
+          return;
+        }
         
+        console.log('Fetching projects for user:', auth.currentUser.uid);
+        const projectsList = await getUserProjects();
+        console.log('Projects fetched:', projectsList.length);
+        
+        // Save projects to state
         setProjects(projectsList);
+        
+        // Select the first project if none is selected
         if (projectsList.length > 0 && !selectedProject) {
           setSelectedProject(projectsList[0]);
+        }
+        
+        // For persistence across refreshes, also try to recover last selected project
+        if (projectsList.length > 0 && localStorage) {
+          const lastProjectId = localStorage.getItem('selectedProjectId');
+          if (lastProjectId) {
+            const foundProject = projectsList.find(p => p.id === lastProjectId);
+            if (foundProject) {
+              setSelectedProject(foundProject);
+            }
+          }
         }
       } catch (error) {
         console.error('Error fetching projects:', error);
       }
     };
     
+    // Fetch projects initially and set up an interval to refresh projects data periodically
     fetchProjects();
+    const refreshInterval = setInterval(fetchProjects, 30000); // Refresh every 30 seconds
+    
+    // Set up an auth state listener to reload projects when user logs in
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        fetchProjects();
+      }
+    });
+    
+    // Clean up interval and auth listener on component unmount
+    return () => {
+      clearInterval(refreshInterval);
+      unsubscribe();
+    };
   }, []);
+  
+  // Save selected project ID to device storage when it changes
+  useEffect(() => {
+    if (selectedProject) {
+      // Use AsyncStorage instead of localStorage (which isn't available in React Native)
+      try {
+        const saveSelectedProject = async () => {
+          const { AsyncStorage } = require('@react-native-async-storage/async-storage');
+          await AsyncStorage.setItem('selectedProjectId', selectedProject.id);
+        };
+        saveSelectedProject();
+      } catch (error) {
+        console.error('Error saving selected project ID:', error);
+      }
+    }
+  }, [selectedProject]);
   
   // Fetch team members when selected project changes using the projects service
   useEffect(() => {
@@ -197,20 +251,31 @@ const ProfileScreen = ({ navigation }) => {
       return;
     }
     
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inviteEmail)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+    
+    // Check if a role is selected
+    if (!inviteRole) {
+      Alert.alert('Error', 'Please select a role for the team member');
+      return;
+    }
+    
     try {
       setLoading(true);
+      console.log(`Inviting ${inviteEmail} with role ${inviteRole} to project ${selectedProject.id}`);
       
-      // Use the inviteUserToProject service
-      await inviteUserToProject(selectedProject.id, inviteEmail)
-        .catch(() => {
-          // If the service fails, we'll just simulate it for demo purposes
-          console.log('Invitation service failed, using local simulation');
-        });
+      // Use the inviteUserToProject service with the selected role
+      const result = await inviteUserToProject(selectedProject.id, inviteEmail, inviteRole);
+      console.log('Invitation success:', result);
       
       // Add to local state for immediate UI update
       const newTeamMember = {
         id: `team-${Date.now()}`,
-        name: inviteEmail.split('@')[0], // Just for demo
+        name: inviteEmail.split('@')[0], // Just for display until they accept
         email: inviteEmail,
         role: inviteRole,
         photoURL: null,
@@ -218,16 +283,19 @@ const ProfileScreen = ({ navigation }) => {
       };
       
       setTeamMembers([...teamMembers, newTeamMember]);
-      setInviteTeamModalVisible(false);
+      
+      // Reset and close the modal
       setInviteEmail('');
       setInviteRole('Member');
+      setInviteTeamModalVisible(false);
       
-      setLoading(false);
-      Alert.alert('Success', `Invitation sent to ${inviteEmail}`);
+      Alert.alert('Success', `Invitation sent to ${inviteEmail} with role: ${inviteRole}`);
     } catch (error) {
       console.error('Error inviting team member:', error);
+      Alert.alert('Error', error.message || 'Failed to send invitation. Please try again.');
+      // Don't close the modal if there's an error, so user can try again
+    } finally {
       setLoading(false);
-      Alert.alert('Error', 'Failed to send invitation. Please try again.');
     }
   };
   
@@ -253,6 +321,9 @@ const ProfileScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Pending Invitations Section (will only show if there are any) */}
+        <PendingInvitations />
+        
         {/* User Info Section */}
         <Card style={styles.card}>
           <Card.Content>
@@ -488,26 +559,30 @@ const ProfileScreen = ({ navigation }) => {
             <View style={styles.roleSelector}>
               <Text style={styles.roleLabel}>Role:</Text>
               
-              <Menu
-                visible={roleMenuVisible}
-                onDismiss={() => setRoleMenuVisible(false)}
-                anchor={
-                  <Button
-                    mode="outlined"
-                    onPress={() => setRoleMenuVisible(true)}
-                    style={styles.roleButton}
-                    icon="chevron-down"
-                    contentStyle={styles.roleButtonContent}
-                  >
-                    {inviteRole}
-                  </Button>
-                }
-              >
-                <Menu.Item onPress={() => { setInviteRole('Partner'); setRoleMenuVisible(false); }} title="Partner" />
-                <Menu.Item onPress={() => { setInviteRole('Employee'); setRoleMenuVisible(false); }} title="Employee" />
-                <Menu.Item onPress={() => { setInviteRole('Member'); setRoleMenuVisible(false); }} title="Member" />
-                <Menu.Item onPress={() => { setInviteRole('Viewer'); setRoleMenuVisible(false); }} title="Viewer" />
-              </Menu>
+              {/* Replace Menu with a simple dropdown for better compatibility */}
+              <View style={styles.roleDropdown}>
+                <Button
+                  mode="outlined"
+                  onPress={() => setInviteRole('Admin')}
+                  style={[styles.roleOption, inviteRole === 'Admin' && styles.selectedRole]}
+                >
+                  Admin
+                </Button>
+                <Button
+                  mode="outlined"
+                  onPress={() => setInviteRole('Member')}
+                  style={[styles.roleOption, inviteRole === 'Member' && styles.selectedRole]}
+                >
+                  Member
+                </Button>
+                <Button
+                  mode="outlined"
+                  onPress={() => setInviteRole('Viewer')}
+                  style={[styles.roleOption, inviteRole === 'Viewer' && styles.selectedRole]}
+                >
+                  Viewer
+                </Button>
+              </View>
             </View>
             
             <View style={styles.modalButtons}>
@@ -682,19 +757,26 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   roleSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   roleLabel: {
-    marginRight: 12,
+    marginBottom: 10,
     fontSize: 16,
+    fontWeight: 'bold',
   },
-  roleButton: {
+  roleDropdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  roleOption: {
     flex: 1,
+    marginHorizontal: 4,
   },
-  roleButtonContent: {
-    flexDirection: 'row-reverse',
+  selectedRole: {
+    backgroundColor: '#e6f2ff',
+    borderColor: '#007BFF',
+    borderWidth: 1,
   },
 });
 

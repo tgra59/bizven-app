@@ -91,7 +91,7 @@ export const createProject = async (projectData) => {
 };
 
 // Invite a user to a project
-export const inviteUserToProject = async (projectId, userEmail) => {
+export const inviteUserToProject = async (projectId, userEmail, role = 'Member') => {
   try {
     const user = auth.currentUser;
     if (!user) throw new Error('User not authenticated');
@@ -105,7 +105,7 @@ export const inviteUserToProject = async (projectId, userEmail) => {
     }
     
     const projectData = projectSnap.data();
-    if (projectData.ownerId !== user.uid && projectData.memberRoles[user.uid] !== 'admin') {
+    if (projectData.ownerId !== user.uid && projectData.memberRoles?.[user.uid] !== 'admin') {
       throw new Error('You do not have permission to invite users');
     }
     
@@ -117,31 +117,79 @@ export const inviteUserToProject = async (projectId, userEmail) => {
     
     const userSnapshot = await getDocs(usersQuery);
     
+    let invitedUser, invitedUserId;
+    
     if (userSnapshot.empty) {
-      throw new Error('User not found with that email');
+      // No existing user with this email, create a placeholder document in pendingUsers collection
+      console.log('User not found, creating placeholder for:', userEmail);
+      
+      // Generate a unique ID for the pending user
+      invitedUserId = `pending_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      
+      // Create a document in pendingUsers collection
+      const pendingUserRef = doc(db, 'pendingUsers', invitedUserId);
+      await setDoc(pendingUserRef, {
+        email: userEmail,
+        createdAt: serverTimestamp(),
+        invitedBy: user.uid
+      });
+      
+      console.log('Created pending user document with ID:', invitedUserId);
+    } else {
+      invitedUser = userSnapshot.docs[0];
+      invitedUserId = invitedUser.id;
+      
+      // Check if user is already a member
+      if (projectData.members && projectData.members.includes(invitedUserId)) {
+        throw new Error('User is already a member of this project');
+      }
     }
     
-    const invitedUser = userSnapshot.docs[0];
-    const invitedUserId = invitedUser.id;
+    // Check if there's already a pending invitation
+    const existingInvitations = query(
+      collection(db, 'invitations'),
+      where('projectId', '==', projectId),
+      where('inviteeEmail', '==', userEmail),
+      where('status', '==', 'pending')
+    );
     
-    // Check if user is already a member
-    if (projectData.members.includes(invitedUserId)) {
-      throw new Error('User is already a member of this project');
+    const existingInviteSnapshot = await getDocs(existingInvitations);
+    
+    if (!existingInviteSnapshot.empty) {
+      throw new Error('This user already has a pending invitation to this project');
     }
     
     // Create invitation in the invitations collection
-    await addDoc(collection(db, 'invitations'), {
+    const invitationRef = await addDoc(collection(db, 'invitations'), {
       projectId,
       projectName: projectData.name,
       inviterId: user.uid,
       inviterName: user.displayName || 'A user',
       inviteeId: invitedUserId,
       inviteeEmail: userEmail,
+      role: role,
       status: 'pending',
       createdAt: serverTimestamp()
     });
     
-    return { success: true, message: 'Invitation sent successfully' };
+    console.log('Created invitation with ID:', invitationRef.id);
+    
+    // Also update the project with a record of this invitation
+    await updateDoc(projectRef, {
+      pendingInvitations: arrayUnion({
+        invitationId: invitationRef.id,
+        email: userEmail,
+        role: role,
+        createdAt: Timestamp.now()
+      }),
+      updatedAt: serverTimestamp()
+    });
+    
+    return { 
+      success: true, 
+      message: 'Invitation sent successfully',
+      invitationId: invitationRef.id
+    };
   } catch (error) {
     console.error("Error inviting user:", error);
     throw error;
@@ -172,11 +220,14 @@ export const acceptProjectInvitation = async (invitationId) => {
       throw new Error('This invitation has already been processed');
     }
     
+    // Get the role from the invitation, or use 'Member' as default
+    const role = invitation.role || 'Member';
+    
     // Update the project with the new member
     const projectRef = doc(db, 'projects', invitation.projectId);
     await updateDoc(projectRef, {
       members: arrayUnion(user.uid),
-      [`memberRoles.${user.uid}`]: 'member',
+      [`memberRoles.${user.uid}`]: role,
       updatedAt: serverTimestamp()
     });
     
