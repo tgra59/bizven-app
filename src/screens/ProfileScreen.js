@@ -35,7 +35,7 @@ import {
   inviteUserToProject,
   getProjectMembersActivity 
 } from '../services/projects';
-import PendingInvitations from '../components/PendingInvitations';
+import CustomPendingInvitations from '../components/CustomPendingInvitations';
 
 const ProfileScreen = ({ navigation }) => {
   // User state
@@ -550,7 +550,7 @@ const ProfileScreen = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Pending Invitations Section (will only show if there are any) */}
-        <PendingInvitations />
+        <CustomPendingInvitations />
         
         {/* User Info Section */}
         <Card style={styles.card}>
