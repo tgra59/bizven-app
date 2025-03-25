@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Button, Title, Text, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { auth, db } from '../config/firebase';
-import { 
-  GoogleAuthProvider, 
-  signInWithCredential
-} from 'firebase/auth';
+import { auth } from '../config/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import * as WebBrowser from 'expo-web-browser';
+import authService from '../services/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -15,56 +14,69 @@ const LoginScreen = () => {
   const [error, setError] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   
-  // Handle Google login/signup
-  const handleGoogleAuth = async () => {
+  // Check for redirect results and handle auth state change
+  useEffect(() => {
+    let unsubscribe;
+    
+    const setupAuth = async () => {
+      // Listen for auth state changes
+      unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          console.log('User is signed in:', user.displayName);
+        }
+      });
+      
+      // Check if we have a redirect result from previous sign-in
+      if (Platform.OS === 'web') {
+        try {
+          const result = await authService.handleRedirectResult();
+          if (result) {
+            console.log('Redirect result handled successfully');
+          }
+        } catch (error) {
+          console.error('Redirect handling error:', error);
+          setError('Error during Google sign-in. Please try again.');
+          setSnackbarVisible(true);
+        }
+      }
+    };
+    
+    setupAuth();
+    
+    // Clean up on unmount
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+  
+  // Handle Google sign-in using our auth service
+  const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
       
-      // For demo purposes, create a fake Google user with a profile picture
-      // In a production app, you would use the real Google Sign-In SDK
-      const userCredential = {
-        user: {
-          uid: "google_demo_user_123",
-          email: "demo@gmail.com",
-          displayName: "Google Demo User",
-          // Use Google's profile picture from the authentication result
-          photoURL: "https://lh3.googleusercontent.com/a/default-user"
-        }
-      };
-      
-      // Check if user exists in Firestore
-      const userDocRef = doc(db, 'users', userCredential.user.uid);
-      const userDoc = await getDoc(userDocRef);
-      
-      // If user doesn't exist, create a new document (sign-up flow)
-      if (!userDoc.exists()) {
-        console.log('Creating new user from Google account');
-        await setDoc(userDocRef, {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email,
-          displayName: userCredential.user.displayName || 'User',
-          photoURL: userCredential.user.photoURL, // Store Google profile picture URL
-          createdAt: new Date(),
-          projects: []
-        });
+      if (Platform.OS === 'web') {
+        await authService.signInWithGoogle();
+        // Auth state changes will be handled by the App.js onAuthStateChanged listener
       } else {
-        console.log('User exists, signing in');
-        // If user exists but doesn't have a profile picture, update with Google profile picture
-        if (!userDoc.data().photoURL && userCredential.user.photoURL) {
-          await updateDoc(userDocRef, {
-            photoURL: userCredential.user.photoURL
-          });
-        }
+        // Mobile platform handling
+        setError('Mobile Google login would be implemented with expo-auth-session');
+        setSnackbarVisible(true);
+        
+        // For testing/demo purposes only
+        console.log('Demo login: Mobile platforms would use expo-auth-session in production');
       }
-      
-      // Navigation will be handled by the onAuthStateChanged listener in App.js
     } catch (error) {
-      console.error('Google authentication error:', error);
-      setError('Failed to authenticate with Google. Please try again.');
+      console.error('Google sign-in error:', error);
+      setError(`Failed to sign in with Google. ${error.message}`);
       setSnackbarVisible(true);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle login button press
+  const handleLogin = () => {
+    handleGoogleSignIn();
   };
 
   return (
@@ -85,7 +97,7 @@ const LoginScreen = () => {
             
             <Button
               mode="contained"
-              onPress={handleGoogleAuth}
+              onPress={handleLogin}
               style={styles.googleButton}
               loading={loading}
               disabled={loading}
