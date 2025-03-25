@@ -264,7 +264,7 @@ const ProfileScreen = ({ navigation }) => {
               
               <Avatar.Image
                 size={80}
-                source={user?.photoURL ? { uri: user.photoURL } : require('../../assets/images/default-avatar.png')}
+                source={user?.photoURL ? { uri: user.photoURL } : require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf')}
               />
             </View>
             
@@ -386,7 +386,7 @@ const ProfileScreen = ({ navigation }) => {
                     left={() => (
                       <Avatar.Image
                         size={40}
-                        source={member.photoURL ? { uri: member.photoURL } : require('../../assets/images/default-avatar.png')}
+                        source={member.photoURL ? { uri: member.photoURL } : require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf')}
                       />
                     )}
                     right={() => (

@@ -20,6 +20,47 @@ const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   
+  // Handle demo login with Google
+  const handleDemoLogin = async () => {
+    try {
+      setLoading(true);
+      
+      // For demo purposes, create a fake Google user
+      const userCredential = {
+        user: {
+          uid: "google_demo_user_123",
+          email: "demo@gmail.com",
+          displayName: "Google Demo User",
+          photoURL: null
+        }
+      };
+      
+      // Check if user exists in Firestore
+      const userDocRef = doc(db, 'users', userCredential.user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      // If user doesn't exist, create a new document
+      if (!userDoc.exists()) {
+        await setDoc(userDocRef, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName || 'User',
+          photoURL: userCredential.user.photoURL,
+          createdAt: new Date(),
+          projects: []
+        });
+      }
+      
+      // Navigation will be handled by the onAuthStateChanged listener in App.js
+    } catch (error) {
+      console.error('Google login error:', error);
+      setError('Failed to sign in with Google. Please try again.');
+      setSnackbarVisible(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   // Handle email/password login
   const handleEmailLogin = async () => {
     try {
