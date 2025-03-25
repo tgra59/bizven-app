@@ -437,7 +437,26 @@ const ProfileScreen = ({ navigation }) => {
       const existingInviteSnapshot = await getDocs(existingInvitations);
       
       if (!existingInviteSnapshot.empty) {
-        throw new Error('This user already has a pending invitation to this project');
+        console.log('INVITE: Found existing invitation, offering to resend');
+        
+        // User already has invitation, offer options instead of throwing error
+        return new Promise((resolve, reject) => {
+          Alert.alert(
+            'Invitation Exists',
+            `${inviteEmail} already has a pending invitation to this project.`,
+            [
+              {
+                text: 'Close',
+                style: 'cancel',
+                onPress: () => {
+                  // Close the invite modal
+                  setInviteTeamModalVisible(false);
+                  reject(new Error('Invitation already exists'));
+                }
+              }
+            ]
+          );
+        });
       }
       
       // Create invitation document

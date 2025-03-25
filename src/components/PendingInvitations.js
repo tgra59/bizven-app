@@ -93,6 +93,8 @@ const PendingInvitations = () => {
         throw new Error('User not authenticated');
       }
       
+      console.log(`INVITATIONS: Current user: ${user.email} (${user.uid})`);
+      
       // Get the invitation details
       const invitationRef = doc(db, 'invitations', selectedInvitation.id);
       const invitationSnap = await getDoc(invitationRef);
@@ -103,6 +105,12 @@ const PendingInvitations = () => {
       
       const invitation = invitationSnap.data();
       console.log('INVITATIONS: Found invitation:', JSON.stringify(invitation));
+      
+      // First, check if this invitation is actually for this user
+      if (invitation.inviteeEmail !== user.email) {
+        Alert.alert('Error', 'This invitation was not sent to your email address.');
+        throw new Error('Invitation email mismatch');
+      }
       
       // Get the project
       const projectRef = doc(db, 'projects', invitation.projectId);
@@ -142,14 +150,22 @@ const PendingInvitations = () => {
         // Just update the invitation status
         await updateDoc(invitationRef, {
           status: 'accepted',
-          respondedAt: serverTimestamp()
+          respondedAt: serverTimestamp(),
+          // Update the inviteeId to match the current user
+          inviteeId: user.uid
         });
       } else {
         console.log('INVITATIONS: Adding user to project members');
         
-        // Update operations
         try {
-          // First, update the project with the new member
+          // First, update the invitation with the current user ID
+          await updateDoc(invitationRef, {
+            inviteeId: user.uid
+          });
+          
+          console.log('INVITATIONS: Updated invitation with current user ID');
+          
+          // Second, update the project with the new member
           await updateDoc(projectRef, {
             members: arrayUnion(user.uid),
             [`memberRoles.${user.uid}`]: role,
@@ -158,7 +174,7 @@ const PendingInvitations = () => {
           
           console.log('INVITATIONS: Updated project with new member');
           
-          // Next, update the user document with the new project
+          // Third, update the user document with the new project
           await updateDoc(userRef, {
             projects: arrayUnion(invitation.projectId)
           });
@@ -189,7 +205,7 @@ const PendingInvitations = () => {
       Alert.alert('Success', `You have joined the project "${invitation.projectName}" as a ${role}`);
     } catch (err) {
       console.error('INVITATIONS: Error accepting invitation:', err);
-      setError('Failed to accept invitation. Please try again.');
+      setError('Failed to accept invitation: ' + (err.message || 'Unknown error'));
       Alert.alert('Error', err.message || 'Failed to accept invitation. Please try again.');
     } finally {
       setProcessingAction(false);

@@ -56,8 +56,15 @@ service cloud.firestore {
       // Allow creation by any authenticated user
       allow create: if request.auth != null;
       
-      // Allow updates if user is the invitee or inviter
+      // Allow updates if user is the invitee, inviter, or if email matches
       allow update: if request.auth != null && (
+        request.auth.uid == resource.data.inviteeId || 
+        request.auth.uid == resource.data.inviterId ||
+        request.auth.token.email == resource.data.inviteeEmail
+      );
+      
+      // Allow deletion if user is the invitee or inviter
+      allow delete: if request.auth != null && (
         request.auth.uid == resource.data.inviteeId || 
         request.auth.uid == resource.data.inviterId
       );
