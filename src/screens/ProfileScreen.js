@@ -206,58 +206,109 @@ const ProfileScreen = ({ navigation }) => {
     }
   }, [selectedProject]);
   
-  // Fetch team members when selected project changes using the projects service
+  // Fetch team members when selected project changes using direct Firestore queries
   useEffect(() => {
     const fetchTeamMembers = async () => {
       if (!selectedProject) return;
       
       try {
-        // Try to use the project service to get team members
-        const members = await getProjectMembersActivity(selectedProject.id)
-          .catch(() => {
-            // If the service fails or the project doesn't exist yet in the database,
-            // use dummy data for now
-            return [
-              {
-                userId: 'team1',
-                displayName: 'John Doe',
-                email: 'john@example.com',
-                role: 'Creator',
-                photoURL: null,
-              },
-              {
-                userId: 'team2',
-                displayName: 'Jane Smith',
-                email: 'jane@example.com',
-                role: 'Partner',
-                photoURL: null,
-              },
-              {
-                userId: 'team3',
-                displayName: 'Bob Johnson',
-                email: 'bob@example.com',
-                role: 'Employee',
-                photoURL: null,
-              },
-            ];
-          });
+        console.log(`TEAM: Fetching team members for project ${selectedProject.id}`);
         
-        // Transform the data to match the expected format
-        const formattedMembers = members.map(member => ({
-          id: member.userId,
-          name: member.displayName,
-          email: member.email,
-          role: member.role,
-          photoURL: member.photoURL,
-        }));
+        // 1. First get the project document to get current members
+        const projectRef = doc(db, 'projects', selectedProject.id);
+        const projectSnap = await getDoc(projectRef);
         
-        setTeamMembers(formattedMembers);
+        if (!projectSnap.exists()) {
+          console.error('TEAM: Project not found');
+          return;
+        }
+        
+        const projectData = projectSnap.data();
+        const memberIds = projectData.members || [];
+        console.log(`TEAM: Project has ${memberIds.length} members`);
+        
+        // 2. Fetch user data for each member
+        const memberPromises = memberIds.map(async (userId) => {
+          try {
+            const userRef = doc(db, 'users', userId);
+            const userSnap = await getDoc(userRef);
+            
+            if (userSnap.exists()) {
+              const userData = userSnap.data();
+              return {
+                id: userId,
+                name: userData.displayName || 'Unknown User',
+                email: userData.email || 'No Email',
+                role: projectData.memberRoles?.[userId] || 'Member',
+                photoURL: userData.photoURL,
+                pending: false
+              };
+            }
+            
+            return {
+              id: userId,
+              name: 'Unknown User',
+              email: 'No Email',
+              role: projectData.memberRoles?.[userId] || 'Member',
+              photoURL: null,
+              pending: false
+            };
+          } catch (err) {
+            console.error(`TEAM: Error fetching user data for ${userId}:`, err);
+            return null;
+          }
+        });
+        
+        // 3. Fetch pending invitations for this project
+        const invitationsQuery = query(
+          collection(db, 'invitations'),
+          where('projectId', '==', selectedProject.id),
+          where('status', '==', 'pending')
+        );
+        
+        const invitationsSnap = await getDocs(invitationsQuery);
+        console.log(`TEAM: Project has ${invitationsSnap.docs.length} pending invitations`);
+        
+        // 4. Transform invitation data to team member format
+        const pendingMembers = invitationsSnap.docs.map(doc => {
+          const inviteData = doc.data();
+          return {
+            id: doc.id, // Use invitation ID
+            name: inviteData.inviteeEmail.split('@')[0], // Use email username as name
+            email: inviteData.inviteeEmail,
+            role: inviteData.role || 'Member',
+            photoURL: null,
+            pending: true
+          };
+        });
+        
+        // 5. Combine active members and pending invitations
+        const activeMembers = (await Promise.all(memberPromises)).filter(Boolean);
+        const allMembers = [...activeMembers, ...pendingMembers];
+        
+        console.log(`TEAM: Total team members (including pending): ${allMembers.length}`);
+        setTeamMembers(allMembers);
       } catch (error) {
-        console.error('Error fetching team members:', error);
+        console.error('TEAM: Error fetching team members:', error);
       }
     };
     
     fetchTeamMembers();
+    
+    // Set up a listener for real-time updates to invitations
+    if (selectedProject) {
+      const invitationsQuery = query(
+        collection(db, 'invitations'),
+        where('projectId', '==', selectedProject.id)
+      );
+      
+      const unsubscribeInvitations = onSnapshot(invitationsQuery, () => {
+        console.log("TEAM: Invitation changes detected, refreshing team members");
+        fetchTeamMembers();
+      });
+      
+      return () => unsubscribeInvitations();
+    }
   }, [selectedProject]);
   
   // Handle creating a new project using the projects service

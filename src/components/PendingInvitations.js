@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { Card, Title, Text, Button, Chip, List, Avatar, Dialog, Portal } from 'react-native-paper';
-import { collection, query, where, getDocs, doc, updateDoc, getDoc, serverTimestamp, onSnapshot, writeBatch, arrayUnion } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, getDoc, setDoc, serverTimestamp, onSnapshot, writeBatch, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 
 const PendingInvitations = () => {
@@ -102,6 +102,7 @@ const PendingInvitations = () => {
       }
       
       const invitation = invitationSnap.data();
+      console.log('INVITATIONS: Found invitation:', JSON.stringify(invitation));
       
       // Get the project
       const projectRef = doc(db, 'projects', invitation.projectId);
@@ -111,33 +112,71 @@ const PendingInvitations = () => {
         throw new Error('Project not found');
       }
       
+      const projectData = projectSnap.data();
+      console.log('INVITATIONS: Found project:', projectData.name);
+      
       // Get the role from the invitation
       const role = invitation.role || 'Member';
+      console.log(`INVITATIONS: Role for new member: ${role}`);
       
-      // Batch write to ensure atomic updates
-      const batch = writeBatch(db);
-      
-      // Update the project with the new member
-      batch.update(projectRef, {
-        members: arrayUnion(user.uid),
-        [`memberRoles.${user.uid}`]: role,
-        updatedAt: serverTimestamp()
-      });
-      
-      // Update the user document
+      // Check if user document exists and create if necessary
       const userRef = doc(db, 'users', user.uid);
-      batch.update(userRef, {
-        projects: arrayUnion(invitation.projectId)
-      });
+      const userSnap = await getDoc(userRef);
       
-      // Update the invitation status
-      batch.update(invitationRef, {
-        status: 'accepted',
-        respondedAt: serverTimestamp()
-      });
+      if (!userSnap.exists()) {
+        console.log('INVITATIONS: Creating user document');
+        await setDoc(userRef, {
+          displayName: user.displayName || user.email.split('@')[0],
+          email: user.email,
+          photoURL: user.photoURL,
+          createdAt: serverTimestamp(),
+          projects: []
+        });
+      }
       
-      // Commit the batch
-      await batch.commit();
+      // Check if user is already in the project members
+      const currentMembers = projectData.members || [];
+      if (currentMembers.includes(user.uid)) {
+        console.log('INVITATIONS: User is already a member of this project');
+        
+        // Just update the invitation status
+        await updateDoc(invitationRef, {
+          status: 'accepted',
+          respondedAt: serverTimestamp()
+        });
+      } else {
+        console.log('INVITATIONS: Adding user to project members');
+        
+        // Update operations
+        try {
+          // First, update the project with the new member
+          await updateDoc(projectRef, {
+            members: arrayUnion(user.uid),
+            [`memberRoles.${user.uid}`]: role,
+            updatedAt: serverTimestamp()
+          });
+          
+          console.log('INVITATIONS: Updated project with new member');
+          
+          // Next, update the user document with the new project
+          await updateDoc(userRef, {
+            projects: arrayUnion(invitation.projectId)
+          });
+          
+          console.log('INVITATIONS: Updated user with new project');
+          
+          // Finally, update the invitation status
+          await updateDoc(invitationRef, {
+            status: 'accepted',
+            respondedAt: serverTimestamp()
+          });
+          
+          console.log('INVITATIONS: Updated invitation status to accepted');
+        } catch (updateErr) {
+          console.error('INVITATIONS: Error during update operations:', updateErr);
+          throw updateErr;
+        }
+      }
       
       console.log(`INVITATIONS: Successfully accepted invitation ${selectedInvitation.id}`);
       
