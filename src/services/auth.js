@@ -18,40 +18,46 @@ class AuthService {
    * @returns {Promise} Authentication result
    */
   async signInWithGoogle() {
+    console.log('Starting Google Sign In process');
+    
     // Create a Google auth provider
     const provider = new GoogleAuthProvider();
     provider.addScope('profile');
     provider.addScope('email');
     
+    // Log auth domain for debugging
+    console.log('Auth Domain:', auth.config.authDomain);
+    
     if (Platform.OS === 'web') {
-      const isMobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        typeof navigator !== 'undefined' ? navigator.userAgent : ''
-      );
-      
-      if (isMobileBrowser) {
-        // For mobile browsers, use redirect because popups are often blocked
-        try {
-          await signInWithRedirect(auth, provider);
-          // The result will be handled in the getRedirectResult
-          return null;
-        } catch (error) {
-          console.error('Redirect sign-in error:', error);
-          throw error;
+      try {
+        // For simplicity, always use popup for now (more reliable for debugging)
+        console.log('Attempting sign in with popup');
+        const result = await signInWithPopup(auth, provider);
+        console.log('Popup sign-in successful');
+        
+        const user = result.user;
+        await this.saveUserToFirestore(user);
+        return result;
+      } catch (error) {
+        console.error('Google sign-in error:', error);
+        
+        // If popup is blocked, try redirect as fallback
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+          console.log('Popup blocked or closed, trying redirect instead');
+          try {
+            await signInWithRedirect(auth, provider);
+            return null; // Result will be handled by getRedirectResult
+          } catch (redirectError) {
+            console.error('Redirect sign-in error:', redirectError);
+            throw redirectError;
+          }
         }
-      } else {
-        // For desktop browsers, popups work better
-        try {
-          const result = await signInWithPopup(auth, provider);
-          const user = result.user;
-          await this.saveUserToFirestore(user);
-          return result;
-        } catch (error) {
-          console.error('Popup sign-in error:', error);
-          throw error;
-        }
+        
+        throw error;
       }
     } else {
       // For React Native, you'd use a library like expo-auth-session
+      console.log('Native platform sign-in not yet implemented');
       throw new Error('Native platform sign-in not implemented');
     }
   }
@@ -84,7 +90,7 @@ class AuthService {
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
       
-      // If new user, create new document
+      // If new user, create new document and mark as needing profile completion
       if (!userDoc.exists()) {
         console.log('Creating new user in Firestore');
         await setDoc(userDocRef, {
@@ -93,8 +99,11 @@ class AuthService {
           displayName: user.displayName || 'User',
           photoURL: user.photoURL,
           createdAt: new Date(),
-          projects: []
+          projects: [],
+          profileCompleted: false, // Flag to indicate profile completion needed
+          isNewUser: true
         });
+        return true; // Return true to indicate this is a new user
       } else {
         console.log('User exists in Firestore');
         // Update photo URL if needed
@@ -103,6 +112,8 @@ class AuthService {
             photoURL: user.photoURL
           });
         }
+        // Return whether profile is completed or not
+        return userDoc.data().profileCompleted === false;
       }
     } catch (error) {
       console.error('Error saving user to Firestore:', error);
@@ -129,6 +140,27 @@ class AuthService {
    */
   getCurrentUser() {
     return auth.currentUser;
+  }
+  
+  /**
+   * Check if the user needs to complete their profile
+   * @returns {Promise<boolean>} True if profile completion is needed
+   */
+  async checkProfileCompletionNeeded() {
+    try {
+      const user = auth.currentUser;
+      if (!user) return false;
+      
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) return true;
+      
+      return userDoc.data().profileCompleted === false;
+    } catch (error) {
+      console.error('Error checking profile completion status:', error);
+      return false;
+    }
   }
 }
 

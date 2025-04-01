@@ -123,19 +123,41 @@ const CustomPendingInvitations = () => {
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
       
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          displayName: user.displayName || user.email.split('@')[0],
-          email: user.email,
-          photoURL: user.photoURL,
-          createdAt: serverTimestamp(),
-          projects: [selectedInvitation.projectId]
-        });
-      } else {
-        // Update the user document with the new project
-        await updateDoc(userRef, {
-          projects: arrayUnion(selectedInvitation.projectId)
-        });
+      try {
+        if (!userSnap.exists()) {
+          console.log('INVITATIONS: Creating new user document with project');
+          await setDoc(userRef, {
+            displayName: user.displayName || user.email.split('@')[0],
+            email: user.email,
+            photoURL: user.photoURL,
+            createdAt: serverTimestamp(),
+            projects: [selectedInvitation.projectId]
+          });
+        } else {
+          console.log('INVITATIONS: Updating existing user document with new project');
+          // Update the user document with the new project
+          await updateDoc(userRef, {
+            projects: arrayUnion(selectedInvitation.projectId)
+          });
+          
+          // Verify the update worked
+          const updatedUserSnap = await getDoc(userRef);
+          const userData = updatedUserSnap.data();
+          console.log('INVITATIONS: Updated user projects:', userData.projects);
+          
+          if (!userData.projects || !userData.projects.includes(selectedInvitation.projectId)) {
+            console.log('INVITATIONS: Project not added to user document, trying alternative approach');
+            // If the project wasn't added, try a different approach
+            const currentProjects = userData.projects || [];
+            await updateDoc(userRef, {
+              projects: [...currentProjects, selectedInvitation.projectId]
+            });
+          }
+        }
+      } catch (userUpdateErr) {
+        console.error('INVITATIONS: Error updating user document:', userUpdateErr);
+        // Continue with the invitation acceptance even if user update fails
+        // We'll try to fix the user-project link later
       }
       
       console.log('INVITATIONS: Updated user with new project');
@@ -146,7 +168,17 @@ const CustomPendingInvitations = () => {
       setSelectedInvitation(null);
       
       // Show success message
-      Alert.alert('Success', `You have joined the project "${selectedInvitation.projectName}" as a ${selectedInvitation.role || 'Member'}`);
+      Alert.alert('Success', `You have joined the project "${selectedInvitation.projectName}" as a ${selectedInvitation.role || 'Member'}`, 
+      [
+        {
+          text: "OK",
+          onPress: () => {
+            // Force a page refresh to show the new project
+            console.log("INVITATIONS: Reloading page to show new project");
+            window.location.reload();
+          }
+        }
+      ]);
     } catch (err) {
       console.error('INVITATIONS: Error accepting invitation:', err);
       setError('Failed to accept invitation: ' + (err.message || 'Unknown error'));

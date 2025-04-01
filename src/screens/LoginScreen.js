@@ -53,23 +53,34 @@ const LoginScreen = () => {
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
+      console.log('Login button clicked, starting Google sign-in process');
       
       if (Platform.OS === 'web') {
-        await authService.signInWithGoogle();
-        // Auth state changes will be handled by the App.js onAuthStateChanged listener
+        // Add a small delay to ensure UI updates before the popup appears
+        setTimeout(async () => {
+          try {
+            console.log('Calling authService.signInWithGoogle()');
+            await authService.signInWithGoogle();
+            console.log('Google sign-in completed successfully');
+            // Auth state changes will be handled by the App.js onAuthStateChanged listener
+          } catch (delayedError) {
+            console.error('Delayed Google sign-in error:', delayedError);
+            setError(`Google sign-in failed: ${delayedError.message}`);
+            setSnackbarVisible(true);
+            setLoading(false);
+          }
+        }, 100);
       } else {
-        // Mobile platform handling
+        // Mobile platform handling (demo only)
+        console.log('Mobile platform detected, showing demo message');
         setError('Mobile Google login would be implemented with expo-auth-session');
         setSnackbarVisible(true);
-        
-        // For testing/demo purposes only
-        console.log('Demo login: Mobile platforms would use expo-auth-session in production');
+        setLoading(false);
       }
     } catch (error) {
-      console.error('Google sign-in error:', error);
-      setError(`Failed to sign in with Google. ${error.message}`);
+      console.error('Google sign-in wrapper error:', error);
+      setError(`Failed to sign in with Google: ${error.message}`);
       setSnackbarVisible(true);
-    } finally {
       setLoading(false);
     }
   };
